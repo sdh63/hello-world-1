@@ -1,76 +1,67 @@
 #!/bin/bash
-echo $0
-if [ "$0" = "$BASH_SOURCE" ]
-then
-   echo "$0: Please source this file."
-   echo "e.g. source ./setenv configurations/"
-   return 1
-fi
-if [ -z "$1" ]
-then
-   echo "setenv: You must provide the name of the configuration file."
-   echo "e.g. source ./setenv configurations/"
-   return 1
-fi
-# Get directory we are running from
+
 DIR=$(pwd)
 DATAFILE="$DIR/$1"
-if [ ! -d "$DIR/configurations" ]; then
-    echo "setenv: Must be run from the root directory of the terraform project."
-    return 1
-fi
+#
+# FuchiCorp common script to set up Google terraform environment variables
+# these all variables should be created on your config file before you run script.
+# <ENVIRONMENT> <BUCKET> <DEPLOYMENT> <PROJECT> <CREDENTIALS>
+
 if [ ! -f "$DATAFILE" ]; then
-    echo "setenv: Configuration file not found: $DATAFILE"
-    return 1
-fi
-# Get env from DATAFILE
-ENVIRONMENT=$(sed -nr 's/^\s*environment\s*=\s*"([^"]*)".*$/\1/p' "$DATAFILE")
-S3BUCKET=$(sed -nr 's/^\s*s3_bucket\s*=\s*"([^"]*)".*$/\1/p' "$DATAFILE")
-S3BUCKETPROJ=$(sed -nr 's/^\s*s3_folder_project\s*=\s*"([^"]*)".*$/\1/p' "$DATAFILE")
-S3BUCKETREGION=$(sed -nr 's/^\s*s3_folder_region\s*=\s*"([^"]*)".*$/\1/p' "$DATAFILE")
-S3BUCKETTYPE=$(sed -nr 's/^\s*s3_folder_type\s*=\s*"([^"]*)".*$/\1/p' "$DATAFILE")
-S3TFSTATEFILE=$(sed -nr 's/^\s*s3_tfstate_file\s*=\s*"([^"]*)".*$/\1/p' "$DATAFILE")
-BASE_DOMAIN=$(sed -nr 's/^\s*base_domain\s*=\s*"([^"]*)".*$/\1/p' "$DATAFILE")
-if [ -z "$ENVIRONMENT" ]
-then
-   echo "setenv: 'environment' variable not set in configuration file."
-   return 1
-fi
-if [ -z "$S3BUCKET" ]
-then
-   echo "setenv: 's3_bucket' variable not set in configuration file."
-   return 1
-fi
-if [ -z "$S3BUCKETPROJ" ]
-then
-  echo "setenv: 's3_folder_project' variable not set in configuration file."
+  echo "setenv: Configuration file not found: $DATAFILE"
   return 1
 fi
-if [ -z "$S3BUCKETREGION" ]
+BUCKET=$(sed -nr 's/^google_bucket_name\s*=\s*"([^"]*)".*$/\1/p'             "$DATAFILE")
+PROJECT=$(sed -nr 's/^google_project_id\s*=\s*"([^"]*)".*$/\1/p'             "$DATAFILE")
+ENVIRONMENT=$(sed -nr 's/^deployment_environment\s*=\s*"([^"]*)".*$/\1/p'    "$DATAFILE")
+DEPLOYMENT=$(sed -nr 's/^deployment_name\s*=\s*"([^"]*)".*$/\1/p'            "$DATAFILE")
+CREDENTIALS=$(sed -nr 's/^credentials\s*=\s*"([^"]*)".*$/\1/p'               "$DATAFILE") 
+
+if [ -z "$ENVIRONMENT" ]
 then
-   echo "setenv: 's3_folder_region' variable not set in configuration file."
-   return 1
+    echo "setenv: 'deployment_environment' variable not set in configuration file."
+    return 1
 fi
-if [ -z "$S3BUCKETTYPE" ]
+
+if [ -z "$BUCKET" ]
 then
-   echo "setenv: 's3_folder_type' variable not set in configuration file."
-   return 1
+  echo "setenv: 'google_bucket_name' variable not set in configuration file."
+  return 1
 fi
-if [ -z "$S3TFSTATEFILE" ]
+
+if [ -z "$PROJECT" ]
 then
-   echo "setenv: 's3_tfstate_file' variable not set in configuration file."
-   echo "e.g. s3_tfstate_file=\"infrastructure.tfstate\""
-return 1
+    echo "setenv: 'google_project_id' variable not set in configuration file."
+    return 1
 fi
+
+if [ -z "$CREDENTIALS" ]
+then
+    echo "setenv: 'credentials' file not set in configuration file."
+    return 1
+fi
+
+if [ -z "$DEPLOYMENT" ]
+then
+    echo "setenv: 'deployment_name' variable not set in configuration file."
+    return 1
+fi
+
 cat << EOF > "$DIR/backend.tf"
 terraform {
-backend "s3" {
-bucket = "${S3BUCKET}"
-key = "${S3BUCKETPROJ}/${S3BUCKETREGION}/${S3BUCKETTYPE}/${ENVIRONMENT}/${S3TFSTATEFILE}"
-region = "${S3BUCKETREGION}"
+  backend "gcs" {
+    bucket  = "${BUCKET}"
+    prefix  = "${ENVIRONMENT}/${DEPLOYMENT}"
+    project = "${PROJECT}"
   }
 }
 EOF
-cat backend.tf
-rm -rf  .terraform/terraform.tfstate
-terraform init
+cat "$DIR/backend.tf"
+
+GOOGLE_APPLICATION_CREDENTIALS="${DIR}/${CREDENTIALS}"
+export GOOGLE_APPLICATION_CREDENTIALS
+export DATAFILE
+/bin/rm -rf "$DIR/.terraform" 2>/dev/null
+/bin/rm -rf "$PWD/common_configuration.tfvars" 2>/dev/null
+echo "setenv: Initializing terraform"
+terraform init #> /dev/null
