@@ -15,5 +15,5 @@ variable "deployment_endpoint" {
   }
 }
 variable "google_domain_name" {
-    default = "kellysalrin.com"
+    default = "sdh63.com"
 }
